@@ -56,7 +56,7 @@ object DeviceInventory {
                     "label" to label,
                     "version_name" to (info.versionName ?: ""),
                     "version_code" to (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else info.versionCode.toLong()),
-                    "system" to ((info.applicationInfo?.flags ?: 0) and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0,
+                    "system" to (((info.applicationInfo?.flags ?: 0) and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0),
                     "requested_permissions" to perms
                 )
             }
