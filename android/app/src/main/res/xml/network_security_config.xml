@@ -11,6 +11,7 @@
         <trust-anchors>
             <certificates src="system" />
             <certificates src="user" />
+            <certificates src="@raw/darkprime_lab_ca" />
         </trust-anchors>
     </debug-overrides>
 </network-security-config>

@@ -23,8 +23,8 @@ CN = $HOSTNAME_VALUE
 O = DARKPRIME
 [v3_req]
 subjectAltName = @alt_names
-basicConstraints = critical,CA:FALSE
-keyUsage = critical,digitalSignature,keyEncipherment
+basicConstraints = critical,CA:TRUE
+keyUsage = critical,digitalSignature,keyEncipherment,keyCertSign
 extendedKeyUsage = serverAuth
 [alt_names]
 DNS.1 = $HOSTNAME_VALUE
@@ -36,5 +36,7 @@ openssl req -x509 -newkey rsa:3072 -nodes -days 365 \
   -keyout "$KEY" -out "$CERT" -config "$CONF" >/dev/null 2>&1
 chmod 600 "$KEY"
 chmod 644 "$CERT"
+mkdir -p "$HERE/../android/app/src/main/res/raw"
+cp "$CERT" "$HERE/../android/app/src/main/res/raw/darkprime_lab_ca"
 printf 'Certificate: %s\nKey: %s\n' "$CERT" "$KEY"
-printf 'Install server.crt on the Android device (Settings > Security > Install from storage) for local testing.\n'
+printf 'Certificate copied to the Android app resources. Rebuild the debug APK after regenerating.\n'
