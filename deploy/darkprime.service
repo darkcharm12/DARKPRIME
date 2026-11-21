@@ -1,0 +1,21 @@
+[Unit]
+Description=DARKPRIME HTTPS audit server (gunicorn behind nginx)
+After=network.target
+
+[Service]
+Type=simple
+User=darkprime
+Group=darkprime
+WorkingDirectory=/opt/darkprime
+EnvironmentFile=/opt/darkprime/data/darkprime.env
+ExecStart=/opt/darkprime/.venv/bin/gunicorn --bind 127.0.0.1:8000 --workers 2 --timeout 60 "server.app:create_app()"
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/darkprime/data
+
+[Install]
+WantedBy=multi-user.target

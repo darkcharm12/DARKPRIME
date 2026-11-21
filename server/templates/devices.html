@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Devices - DARKPRIME{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Enrolled devices</h1>
+  <p class="muted">Only devices whose owners installed the companion app and confirmed consent appear here.</p>
+  {% if devices %}
+  <table>
+    <thead><tr><th>Name</th><th>Model</th><th>Android</th><th>Status</th><th>Last seen</th><th>Open alerts</th><th></th></tr></thead>
+    <tbody>
+    {% for d in devices %}
+      <tr>
+        <td>{{ d['name'] }}</td>
+        <td>{{ d['model'] or '-' }}</td>
+        <td>{{ d['android_version'] or '-' }}</td>
+        <td><span class="badge {{ 'bad' if d['status'] != 'active' else '' }}">{{ d['status'] }}</span></td>
+        <td>{{ d['last_seen_at'] or 'never' }}</td>
+        <td>{{ d['open_alerts'] }}</td>
+        <td><a href="{{ url_for('dashboard.device_detail', device_id=d['id']) }}">Open</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No devices yet. Create an enrollment token on the <a href="{{ url_for('dashboard.enroll') }}">Enroll</a> page and give it to the device owner.</p>
+  {% endif %}
+</section>
+{% endblock %}

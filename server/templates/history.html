@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}History - {{ device['name'] }} - DARKPRIME{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Historical reports for {{ device['name'] }}</h1>
+  <p class="muted">Newest first, up to 200 snapshots. Full exports are available through the API.</p>
+  {% for report in reports %}
+    <details class="report">
+      <summary>#{{ report['id'] }} · captured {{ report['captured_at'] or 'unknown' }} · received {{ report['received_at'] }}</summary>
+      <pre>{{ json.dumps(json.loads(report['payload']), indent=2, sort_keys=True) }}</pre>
+    </details>
+  {% else %}
+    <p>No reports stored yet.</p>
+  {% endfor %}
+</section>
+{% endblock %}

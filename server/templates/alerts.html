@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Alerts - DARKPRIME{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Security alerts</h1>
+  <p class="muted">Rules are deterministic and documented. Alerts are observations, not proof of compromise.</p>
+  {% if alerts %}
+  <table>
+    <thead><tr><th>Device</th><th>Severity</th><th>Alert</th><th>Detail</th><th>Created</th><th></th></tr></thead>
+    <tbody>
+    {% for a in alerts %}
+      <tr>
+        <td>{{ a['device_name'] }}</td>
+        <td><span class="badge {{ a['severity'] }}">{{ a['severity'] }}</span></td>
+        <td>{{ a['title'] }}</td>
+        <td>{{ a['detail'] }}</td>
+        <td>{{ a['created_at'] }}</td>
+        <td>
+          {% if not a['acknowledged_at'] %}
+          <form method="post" action="{{ url_for('dashboard.ack_alert', alert_id=a['id']) }}" class="inline">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <button type="submit">Acknowledge</button>
+          </form>
+          {% else %}acknowledged{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p>No alerts yet.</p>{% endif %}
+</section>
+{% endblock %}

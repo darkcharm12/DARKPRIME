@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Enroll a device - DARKPRIME{% endblock %}
+{% block content %}
+<section class="card narrow">
+  <h1>Create a one-time enrollment token</h1>
+  <p class="muted">Give the token to the device owner. It expires and can be used only once. The owner must type it into the app and tick the consent checkbox.</p>
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label>Label (e.g. owner name or asset tag)<input name="label" maxlength="120"></label>
+    <button type="submit">Generate token</button>
+  </form>
+  {% if new_token %}
+  <div class="token">
+    <strong>One-time token</strong>
+    <code>{{ new_token }}</code>
+    <p class="muted">Valid for {{ expires }} hours. It is shown only once; only its hash is stored.</p>
+  </div>
+  {% endif %}
+</section>
+<section class="card">
+  <h2>Recently created tokens</h2>
+  <table>
+    <thead><tr><th>Label</th><th>Created</th><th>Expires</th><th>Used</th></tr></thead>
+    <tbody>
+    {% for t in tokens %}
+      <tr><td>{{ t['label'] or '-' }}</td><td>{{ t['created_at'] }}</td><td>{{ t['expires_at'] }}</td><td>{{ t['used_at'] or 'no' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

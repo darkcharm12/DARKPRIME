@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DARKPRIME</string>
+    <string name="disclosure">DARKPRIME is a consent-based auditing app. While enrolled it periodically reports: Android version, device model, battery, storage, installed applications and their declared permissions, accessibility service list, and device-admin status. It does not access cameras, microphones, messages, contacts, call logs, browsing history, or credentials. A persistent notification is always shown while monitoring is active. You can stop monitoring and unenroll at any time.</string>
+</resources>

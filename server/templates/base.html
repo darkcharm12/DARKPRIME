@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}DARKPRIME{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+  <a class="brand" href="{{ url_for('dashboard.devices') }}">DARKPRIME</a>
+  <span class="tagline">consent-based Android auditing</span>
+  {% if session.get('operator_id') %}
+  <nav>
+    <a href="{{ url_for('dashboard.devices') }}">Devices</a>
+    <a href="{{ url_for('dashboard.enroll') }}">Enroll</a>
+    <a href="{{ url_for('dashboard.alerts') }}">Alerts</a>
+    <a href="{{ url_for('dashboard.audit_log') }}">Audit log</a>
+  </nav>
+  <form method="post" action="{{ url_for('dashboard.logout') }}" class="inline">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <button class="link-button" type="submit">Sign out</button>
+  </form>
+  {% endif %}
+</header>
+<main>
+  {% with messages = get_flashed_messages() %}
+    {% for message in messages %}<p class="flash">{{ message }}</p>{% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+<footer>
+  Monitoring is only possible after the device owner explicitly consents in the companion app.
+  Every session and enrollment is recorded in the audit log.
+</footer>
+</body>
+</html>

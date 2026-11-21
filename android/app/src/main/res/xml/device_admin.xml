@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- No policies are requested. This receiver exists only so DARKPRIME can report
+         its own device-admin status honestly. -->
+    <uses-policies />
+</device-admin>

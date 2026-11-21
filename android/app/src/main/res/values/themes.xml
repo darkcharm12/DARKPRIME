@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Darkprime" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+        <item name="colorPrimary">#0D1117</item>
+        <item name="colorPrimaryDark">#080B10</item>
+        <item name="colorAccent">#58A6FF</item>
+        <item name="android:windowBackground">#0D1117</item>
+        <item name="android:textColorPrimary">#E6EDF3</item>
+    </style>
+</resources>

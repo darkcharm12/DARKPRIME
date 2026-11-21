@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Audit log - DARKPRIME{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Audit log</h1>
+  <p class="muted">Immutable record of sign-ins, token creation, enrollment, unenrollment and alert acknowledgements.</p>
+  <table>
+    <thead><tr><th>Time</th><th>Action</th><th>Device</th><th>Detail</th></tr></thead>
+    <tbody>
+    {% for e in events %}
+      <tr><td>{{ e['created_at'] }}</td><td><code>{{ e['action'] }}</code></td><td>{{ e['device_name'] or e['device_id'] or '-' }}</td><td>{{ e['detail'] }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

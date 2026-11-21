@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}{{ device['name'] }} - DARKPRIME{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>{{ device['name'] }}</h1>
+  <p class="muted">
+    Model {{ device['model'] or 'unknown' }} · Android {{ device['android_version'] or 'unknown' }} ·
+    consent {{ device['consent_at'] }} · last report {{ received_at or 'none' }}
+  </p>
+  <p>
+    <a href="{{ url_for('dashboard.history', device_id=device['id']) }}">Historical reports</a> ·
+    <a href="{{ url_for('api.device_history', device_id=device['id']) }}">JSON history</a> ·
+    <a href="{{ url_for('api.device_alerts', device_id=device['id']) }}">JSON alerts</a>
+  </p>
+  <form method="post" action="{{ url_for('dashboard.unenroll', device_id=device['id']) }}" class="inline"
+        onsubmit="return confirm('Request unenrollment? The owner can also stop monitoring in the app at any time.');">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <button class="danger" type="submit" {{ 'disabled' if device['status'] != 'active' else '' }}>
+      Request unenrollment
+    </button>
+    {% if device['unenroll_requested_at'] %}<span class="muted">Requested {{ device['unenroll_requested_at'] }}</span>{% endif %}
+  </form>
+</section>
+
+{% if latest %}
+<section class="grid">
+  <div class="card">
+    <h2>Device</h2>
+    <dl>
+      {% for key, value in latest.get('device', {}).items() %}<dt>{{ key }}</dt><dd>{{ value }}</dd>{% endfor %}
+    </dl>
+  </div>
+  <div class="card">
+    <h2>Battery and storage</h2>
+    <dl>
+      {% for section in ['battery', 'storage', 'network'] %}
+        {% for key, value in latest.get(section, {}).items() %}<dt>{{ section }}.{{ key }}</dt><dd>{{ value }}</dd>{% endfor %}
+      {% endfor %}
+    </dl>
+  </div>
+  <div class="card">
+    <h2>Security posture</h2>
+    <dl>
+      {% for key, value in latest.get('security', {}).items() %}<dt>{{ key }}</dt><dd>{{ value }}</dd>{% endfor %}
+    </dl>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Installed applications ({{ latest.get('apps', []) | length }})</h2>
+  <p class="muted">Only declared (requested) permissions are shown. No runtime data is collected.</p>
+  <table>
+    <thead><tr><th>Application</th><th>Package</th><th>System</th><th>Declared permissions</th></tr></thead>
+    <tbody>
+    {% for app in latest.get('apps', []) %}
+      <tr>
+        <td>{{ app.get('label', '') }}</td>
+        <td><code>{{ app.get('package', '') }}</code></td>
+        <td>{{ 'yes' if app.get('system') else 'no' }}</td>
+        <td>
+          {% if app.get('requested_permissions') %}
+            <details><summary>{{ app['requested_permissions'] | length }}</summary>
+              <ul>{% for perm in app['requested_permissions'] %}<li><code>{{ perm }}</code></li>{% endfor %}</ul>
+            </details>
+          {% else %}none{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}
+<section class="card"><h2>No reports yet</h2><p>Wait for the companion app's first check-in.</p></section>
+{% endif %}
+
+<section class="card">
+  <h2>Security alerts</h2>
+  {% if alerts %}
+  <table>
+    <thead><tr><th>Severity</th><th>Alert</th><th>Detail</th><th>Created</th><th></th></tr></thead>
+    <tbody>
+    {% for a in alerts %}
+      <tr>
+        <td><span class="badge {{ a['severity'] }}">{{ a['severity'] }}</span></td>
+        <td>{{ a['title'] }}</td>
+        <td>{{ a['detail'] }}</td>
+        <td>{{ a['created_at'] }}</td>
+        <td>
+          {% if not a['acknowledged_at'] %}
+          <form method="post" action="{{ url_for('dashboard.ack_alert', alert_id=a['id']) }}" class="inline">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <button type="submit">Acknowledge</button>
+          </form>
+          {% else %}acknowledged{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">No alerts for this device.</p>{% endif %}
+</section>
+{% endblock %}
