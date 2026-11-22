@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
-from flask import Blueprint, current_app, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request, send_file
 
 from .alerts import evaluate, latest_payload
 from .auth import (
@@ -44,11 +45,58 @@ def _device_public(row) -> dict:
 
 
 def _pending_actions(row) -> list[str]:
-    return ["unenroll"] if row["unenroll_requested_at"] and row["status"] == "active" else []
+    actions = []
+    if row["unenroll_requested_at"] and row["status"] == "active":
+        actions.append("unenroll")
+    pending = get_db().execute(
+        "SELECT 1 FROM screen_sessions WHERE device_id = ? AND status = 'pending' LIMIT 1",
+        (row["id"],),
+    ).fetchone()
+    if pending:
+        actions.append("screen_session")
+    return actions
 
 
 def _poll_seconds() -> int:
     return int(current_app.config["POLL_INTERVAL_SECONDS"])
+
+
+def _frame_path(session_id: int) -> Path:
+    directory = Path(current_app.config["SCREEN_FRAME_DIR"])
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory / f"session-{session_id}.jpg"
+
+
+def _screen_session_public(row) -> dict:
+    return {
+        "id": row["id"],
+        "device_id": row["device_id"],
+        "status": row["status"],
+        "requested_at": row["requested_at"],
+        "approved_at": row["approved_at"],
+        "connected_at": row["connected_at"],
+        "last_seen_at": row["last_seen_at"],
+        "last_frame_at": row["last_frame_at"],
+        "stop_requested_at": row["stop_requested_at"],
+        "stopped_at": row["stopped_at"],
+        "has_frame": bool(row["frame_path"]),
+    }
+
+
+def _operator_session(db, session_id: int, operator_id: int):
+    return db.execute(
+        """SELECT s.* FROM screen_sessions s
+           JOIN devices d ON d.id = s.device_id
+           WHERE s.id = ? AND d.operator_id = ?""",
+        (session_id, operator_id),
+    ).fetchone()
+
+
+def _device_session(db, session_id: int, device_id: int):
+    return db.execute(
+        "SELECT * FROM screen_sessions WHERE id = ? AND device_id = ?",
+        (session_id, device_id),
+    ).fetchone()
 
 
 @bp.get("/api/health")
@@ -316,5 +364,233 @@ def device_confirm_unenroll():
         (utcnow(), g.device["id"]),
     )
     audit(db, "device.unenrolled", device_id=g.device["id"], detail="owner confirmed")
+    db.commit()
+    return jsonify(ok=True)
+
+
+@bp.post("/api/devices/<int:device_id>/screen-sessions")
+@require_operator
+def request_screen_session(device_id: int):
+    db = get_db()
+    device = db.execute(
+        "SELECT * FROM devices WHERE id = ? AND operator_id = ? AND status = 'active'",
+        (device_id, g.operator["id"]),
+    ).fetchone()
+    if not device:
+        return error("device_not_found_or_inactive", 404)
+    now = utcnow()
+    previous = db.execute(
+        """SELECT id, frame_path FROM screen_sessions
+           WHERE device_id = ? AND status IN ('pending', 'active', 'stopping')""",
+        (device_id,),
+    ).fetchall()
+    for row in previous:
+        if row["frame_path"]:
+            Path(row["frame_path"]).unlink(missing_ok=True)
+    db.execute(
+        """UPDATE screen_sessions SET status = 'expired', stopped_at = ?
+           WHERE device_id = ? AND status IN ('pending', 'active', 'stopping')""",
+        (now, device_id),
+    )
+    cur = db.execute(
+        """INSERT INTO screen_sessions (device_id, operator_id, status, requested_at)
+           VALUES (?,?, 'pending', ?)""",
+        (device_id, g.operator["id"], now),
+    )
+    audit(db, "screen_session.requested", operator_id=g.operator["id"], device_id=device_id,
+          detail=f"session={cur.lastrowid}")
+    db.commit()
+    row = db.execute("SELECT * FROM screen_sessions WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return jsonify(_screen_session_public(row)), 201
+
+
+@bp.get("/api/devices/<int:device_id>/screen-sessions")
+@require_operator
+def list_screen_sessions(device_id: int):
+    db = get_db()
+    device = db.execute(
+        "SELECT 1 FROM devices WHERE id = ? AND operator_id = ?",
+        (device_id, g.operator["id"]),
+    ).fetchone()
+    if not device:
+        return error("device_not_found", 404)
+    rows = db.execute(
+        "SELECT * FROM screen_sessions WHERE device_id = ? ORDER BY id DESC LIMIT 50",
+        (device_id,),
+    ).fetchall()
+    return jsonify(items=[_screen_session_public(row) for row in rows])
+
+
+@bp.get("/api/screen-sessions/<int:session_id>")
+@require_operator
+def get_screen_session(session_id: int):
+    row = _operator_session(get_db(), session_id, g.operator["id"])
+    if not row:
+        return error("session_not_found", 404)
+    return jsonify(_screen_session_public(row))
+
+
+@bp.get("/api/screen-sessions/<int:session_id>/frame")
+@require_operator
+def get_screen_frame(session_id: int):
+    row = _operator_session(get_db(), session_id, g.operator["id"])
+    if not row:
+        return error("session_not_found", 404)
+    frame = _frame_path(session_id)
+    if not frame.is_file():
+        return error("frame_not_available", 404)
+    return send_file(frame, mimetype="image/jpeg", conditional=False, max_age=0)
+
+
+@bp.post("/api/screen-sessions/<int:session_id>/stop")
+@require_operator
+def stop_screen_session(session_id: int):
+    db = get_db()
+    row = _operator_session(db, session_id, g.operator["id"])
+    if not row:
+        return error("session_not_found", 404)
+    if row["status"] in ("stopped", "declined", "expired"):
+        return jsonify(_screen_session_public(row))
+    now = utcnow()
+    if row["status"] == "pending":
+        db.execute(
+            """UPDATE screen_sessions SET status = 'stopped', stop_requested_at = ?, stopped_at = ?
+               WHERE id = ?""",
+            (now, now, session_id),
+        )
+    else:
+        db.execute(
+            """UPDATE screen_sessions SET status = 'stopping', stop_requested_at = ?
+               WHERE id = ? AND stop_requested_at IS NULL""",
+            (now, session_id),
+        )
+    audit(db, "screen_session.stop_requested", operator_id=g.operator["id"],
+          device_id=row["device_id"], detail=f"session={session_id}")
+    db.commit()
+    current = db.execute("SELECT * FROM screen_sessions WHERE id = ?", (session_id,)).fetchone()
+    return jsonify(_screen_session_public(current))
+
+
+@bp.get("/api/devices/me/screen-sessions")
+@require_device
+def my_screen_sessions():
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM screen_sessions WHERE device_id = ? ORDER BY id DESC LIMIT 20",
+        (g.device["id"],),
+    ).fetchall()
+    items = [_screen_session_public(row) for row in rows]
+    pending = next((item for item in items if item["status"] == "pending"), None)
+    active = next((item for item in items if item["status"] in ("active", "stopping")), None)
+    return jsonify(items=items, pending=pending, active=active)
+
+
+@bp.post("/api/devices/me/screen-sessions/<int:session_id>/approve")
+@require_device
+def approve_screen_session(session_id: int):
+    data = request.get_json(silent=True) or {}
+    consent = data.get("consent") if isinstance(data.get("consent"), dict) else {}
+    if consent.get("accepted") is not True:
+        return error("explicit_consent_required", 403)
+    db = get_db()
+    row = _device_session(db, session_id, g.device["id"])
+    if not row or row["status"] != "pending":
+        return error("session_not_pending", 409)
+    now = utcnow()
+    db.execute(
+        """UPDATE screen_sessions SET status = 'stopped', stopped_at = ?
+           WHERE device_id = ? AND id <> ? AND status IN ('active', 'stopping')""",
+        (now, g.device["id"], session_id),
+    )
+    db.execute(
+        """UPDATE screen_sessions
+           SET status = 'active', approved_at = ?, connected_at = ?, last_seen_at = ?, consent_at = ?
+           WHERE id = ?""",
+        (now, now, now, str(consent.get("at") or now)[:40], session_id),
+    )
+    audit(db, "screen_session.approved_by_owner", operator_id=row["operator_id"],
+          device_id=g.device["id"], detail=f"session={session_id}")
+    db.commit()
+    current = db.execute("SELECT * FROM screen_sessions WHERE id = ?", (session_id,)).fetchone()
+    return jsonify(_screen_session_public(current))
+
+
+@bp.post("/api/devices/me/screen-sessions/<int:session_id>/decline")
+@require_device
+def decline_screen_session(session_id: int):
+    db = get_db()
+    row = _device_session(db, session_id, g.device["id"])
+    if not row or row["status"] != "pending":
+        return error("session_not_pending", 409)
+    now = utcnow()
+    db.execute(
+        "UPDATE screen_sessions SET status = 'declined', stopped_at = ? WHERE id = ?",
+        (now, session_id),
+    )
+    audit(db, "screen_session.declined_by_owner", operator_id=row["operator_id"],
+          device_id=g.device["id"], detail=f"session={session_id}")
+    db.commit()
+    return jsonify(ok=True)
+
+
+@bp.post("/api/devices/me/screen-sessions/<int:session_id>/heartbeat")
+@require_device
+def screen_session_heartbeat(session_id: int):
+    db = get_db()
+    row = _device_session(db, session_id, g.device["id"])
+    if not row or row["status"] not in ("active", "stopping"):
+        return error("session_not_active", 409)
+    now = utcnow()
+    db.execute("UPDATE screen_sessions SET last_seen_at = ? WHERE id = ?", (now, session_id))
+    db.commit()
+    return jsonify(status=row["status"], stop_requested=bool(row["stop_requested_at"]))
+
+
+@bp.post("/api/devices/me/screen-sessions/<int:session_id>/frame")
+@require_device
+def post_screen_frame(session_id: int):
+    db = get_db()
+    row = _device_session(db, session_id, g.device["id"])
+    if not row or row["status"] != "active":
+        return error("session_not_active", 409)
+    if row["stop_requested_at"]:
+        return error("session_stop_requested", 409)
+    if request.mimetype != "image/jpeg":
+        return error("jpeg_required", 415)
+    data = request.get_data(cache=False)
+    if not data or len(data) > int(current_app.config["MAX_CONTENT_LENGTH"]):
+        return error("invalid_frame_size", 413)
+    frame = _frame_path(session_id)
+    temporary = frame.with_suffix(".jpg.tmp")
+    temporary.write_bytes(data)
+    temporary.replace(frame)
+    now = utcnow()
+    db.execute(
+        """UPDATE screen_sessions
+           SET frame_path = ?, last_frame_at = ?, last_seen_at = ?, connected_at = COALESCE(connected_at, ?)
+           WHERE id = ?""",
+        (str(frame), now, now, now, session_id),
+    )
+    db.commit()
+    return jsonify(ok=True, bytes=len(data))
+
+
+@bp.post("/api/devices/me/screen-sessions/<int:session_id>/stop")
+@require_device
+def device_stop_screen_session(session_id: int):
+    db = get_db()
+    row = _device_session(db, session_id, g.device["id"])
+    if not row:
+        return error("session_not_found", 404)
+    now = utcnow()
+    db.execute(
+        "UPDATE screen_sessions SET status = 'stopped', stopped_at = ? WHERE id = ?",
+        (now, session_id),
+    )
+    frame = _frame_path(session_id)
+    if frame.is_file():
+        frame.unlink(missing_ok=True)
+    audit(db, "screen_session.stopped_by_owner", operator_id=row["operator_id"],
+          device_id=g.device["id"], detail=f"session={session_id}")
     db.commit()
     return jsonify(ok=True)

@@ -7,6 +7,13 @@
   times and in the `scope` field of every report.
 - A persistent foreground notification with **Review** and **Stop** actions is mandatory. The app
   has no hidden/stealth mode.
+- Screen sharing is a separate, per-session approval: the dashboard request appears as a visible
+  notification and an in-app explanation dialog, then Android's own MediaProjection consent dialog
+  must be accepted. The system capture indicator and the same DARKPRIME foreground notification
+  remain visible; there is no second notification for the screen session.
+- The owner can stop screen sharing instantly from the app button, the notification action, or by
+  declining/ending via the server; stopping releases MediaProjection immediately and deletes the
+  stored frame.
 - Unenrollment is available to the owner (notification action, app button) and to the operator
   (dashboard request). Confirmation revokes the device token server-side; the local token and
   scheduled work are cleared.
@@ -17,6 +24,10 @@ Device model/brand/manufacturer, Android version/SDK/security patch, battery lev
 state, storage totals and free space, installed package names/labels/versions and their
 **declared** permissions, enabled accessibility service names, device-admin status, screen-lock
 status, USB-debugging/developer-options/unknown-sources flags, encryption status and network type.
+
+Optional, owner-approved screen sharing sends low-resolution JPEG frames over the same HTTPS
+channel only while a session is active. No keystroke injection, tap capture, file access or
+credential harvesting is implemented.
 
 Explicitly excluded: camera, microphone, SMS/messages, contacts, call logs, credentials,
 browsing history, files, photos and location. The app declares no permissions for these.
@@ -43,8 +54,10 @@ browsing history, files, photos and location. The app declares no permissions fo
 
 ## Storage and auditability
 
-- SQLite stores snapshots, deduplicated alerts, sessions, enrollment tokens and an append-only
-  audit log. Use filesystem permissions (600) and regular encrypted backups.
+- SQLite stores snapshots, deduplicated alerts, screen-session metadata, enrollment tokens and an
+  append-only audit log. Screen frames are stored under `data/screen_frames/` (git-ignored) and are
+  deleted when the owner stops the session; use filesystem permissions (600) and regular encrypted
+  backups.
 - Every alert rule is deterministic and explained in the dashboard, so findings can be reviewed
   with the device owner.
 

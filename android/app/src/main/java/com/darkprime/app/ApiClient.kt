@@ -82,8 +82,8 @@ class ApiClient(private val serverUrl: String, private val deviceToken: String? 
 
     fun telemetry(payload: JSONObject): JSONObject = call("/api/devices/me/telemetry", payload)
 
-    fun myDevice(): JSONObject {
-        val builder = Request.Builder().url(base + "/api/devices/me")
+    private fun get(path: String): JSONObject {
+        val builder = Request.Builder().url(base + path)
         if (!deviceToken.isNullOrBlank()) builder.header("Authorization", "Bearer $deviceToken")
         val request = builder.header("Accept", "application/json").get().build()
         client.newCall(request).execute().use { response ->
@@ -92,6 +92,41 @@ class ApiClient(private val serverUrl: String, private val deviceToken: String? 
             return if (text.isBlank()) JSONObject() else JSONObject(text)
         }
     }
+
+    fun myDevice(): JSONObject = get("/api/devices/me")
+
+    fun screenSessions(): JSONObject = get("/api/devices/me/screen-sessions")
+
+    fun approveScreenSession(sessionId: Int, consentAt: String): JSONObject = call(
+        "/api/devices/me/screen-sessions/$sessionId/approve",
+        jsonObject("consent" to jsonObject("accepted" to true, "at" to consentAt))
+    )
+
+    fun declineScreenSession(sessionId: Int): JSONObject = call(
+        "/api/devices/me/screen-sessions/$sessionId/decline", jsonObject()
+    )
+
+    fun screenHeartbeat(sessionId: Int): JSONObject = call(
+        "/api/devices/me/screen-sessions/$sessionId/heartbeat", jsonObject()
+    )
+
+    fun postScreenFrame(sessionId: Int, jpeg: ByteArray): JSONObject {
+        val request = Request.Builder()
+            .url(base + "/api/devices/me/screen-sessions/$sessionId/frame")
+            .header("Authorization", "Bearer ${deviceToken.orEmpty()}")
+            .header("Accept", "application/json")
+            .post(jpeg.toRequestBody("image/jpeg".toMediaType()))
+            .build()
+        client.newCall(request).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            if (!response.isSuccessful) throw ApiException(response.code, text.ifBlank { response.message })
+            return if (text.isBlank()) JSONObject() else JSONObject(text)
+        }
+    }
+
+    fun stopScreenSession(sessionId: Int): JSONObject = call(
+        "/api/devices/me/screen-sessions/$sessionId/stop", jsonObject()
+    )
 
     fun requestUnenroll(): JSONObject = call("/api/devices/me/unenroll/request", jsonObject())
 

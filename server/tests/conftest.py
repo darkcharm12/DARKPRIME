@@ -25,6 +25,7 @@ def app(tmp_path):
             "ENROLLMENT_TOKEN_TTL_HOURS": 72,
             "POLL_INTERVAL_SECONDS": 900,
             "MIN_SUPPORTED_ANDROID_SDK": 26,
+            "SCREEN_FRAME_DIR": str(tmp_path / "screen_frames"),
             "TRUST_PROXY": False,
         }
     )

@@ -1,13 +1,18 @@
 package com.darkprime.app
 
 import android.Manifest
+import android.app.Activity
 import android.app.AlertDialog
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.widget.Button
 import android.widget.CheckBox
@@ -15,20 +20,35 @@ import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import java.time.Instant
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var statusText: TextView
     private lateinit var detailText: TextView
+    private lateinit var screenStatusText: TextView
     private lateinit var enrollPanel: View
     private lateinit var serverUrlInput: EditText
     private lateinit var tokenInput: EditText
     private lateinit var consentCheck: CheckBox
     private lateinit var enrollButton: Button
     private lateinit var unenrollButton: Button
+    private lateinit var stopScreenButton: Button
     private lateinit var adminButton: Button
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var pendingSessionId: Int? = null
+    private var promptShownSessionId: Int? = null
+    private var projectionSessionId: Int? = null
+    private var currentScreenSessionId: Int? = null
+    private var screenCheckInFlight = false
+
+    private val screenPoll = object : Runnable {
+        override fun run() {
+            checkScreenSessions()
+            mainHandler.postDelayed(this, 5000L)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,22 +56,19 @@ class MainActivity : AppCompatActivity() {
 
         statusText = findViewById(R.id.statusText)
         detailText = findViewById(R.id.detailText)
+        screenStatusText = findViewById(R.id.screenStatusText)
         enrollPanel = findViewById(R.id.enrollPanel)
         serverUrlInput = findViewById(R.id.serverUrlInput)
         tokenInput = findViewById(R.id.tokenInput)
         consentCheck = findViewById(R.id.consentCheck)
         enrollButton = findViewById(R.id.enrollButton)
         unenrollButton = findViewById(R.id.unenrollButton)
+        stopScreenButton = findViewById(R.id.stopScreenButton)
         adminButton = findViewById(R.id.adminButton)
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
-        }
 
         enrollButton.setOnClickListener { attemptEnroll() }
         unenrollButton.setOnClickListener { confirmUnenroll() }
+        stopScreenButton.setOnClickListener { stopCurrentScreenSession() }
         adminButton.setOnClickListener { showAdminStatus() }
         refresh()
     }
@@ -59,6 +76,13 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refresh()
+        mainHandler.removeCallbacks(screenPoll)
+        mainHandler.post(screenPoll)
+    }
+
+    override fun onPause() {
+        mainHandler.removeCallbacks(screenPoll)
+        super.onPause()
     }
 
     private fun refresh() {
@@ -72,16 +96,180 @@ class MainActivity : AppCompatActivity() {
                 "Server: ${manager.serverUrl}",
                 "Consent recorded: ${manager.consentAt}",
                 "A persistent notification is shown while monitoring is active.",
-                "No camera, microphone, message, contact, credential, or file access is used."
+                "Screen frames are sent only after a separate approval and Android capture consent."
             ).joinToString("\n")
             MonitoringService.start(this)
+            checkScreenSessions()
         } else {
             enrollPanel.visibility = View.VISIBLE
             unenrollButton.visibility = View.GONE
+            stopScreenButton.visibility = View.GONE
+            screenStatusText.text = "Screen sharing: off (not enrolled)"
             statusText.text = "NOT ENROLLED"
             detailText.text = "Enrollment requires a one-time token from the operator dashboard and your explicit consent."
             stopService(Intent(this, MonitoringService::class.java))
         }
+    }
+
+    private fun apiClient(): ApiClient? {
+        val manager = EnrollmentManager(this)
+        val server = manager.serverUrl ?: return null
+        val token = manager.deviceToken ?: return null
+        return ApiClient(server, token)
+    }
+
+    private fun checkScreenSessions() {
+        if (screenCheckInFlight) return
+        val api = apiClient()
+        if (api == null) {
+            screenStatusText.text = "Screen sharing: off (not enrolled)"
+            stopScreenButton.visibility = View.GONE
+            return
+        }
+        screenCheckInFlight = true
+        Thread {
+            try {
+                val body = api.screenSessions()
+                val pending = body.optJSONObject("pending")
+                val active = body.optJSONObject("active")
+                runOnUiThread {
+                    if (active != null) {
+                        currentScreenSessionId = active.optInt("id")
+                        screenStatusText.text = "Screen sharing: ACTIVE — visible on screen"
+                        stopScreenButton.visibility = View.VISIBLE
+                    } else {
+                        currentScreenSessionId = null
+                        stopScreenButton.visibility = View.GONE
+                        screenStatusText.text = if (pending != null) {
+                            "Screen sharing: approval requested"
+                        } else {
+                            "Screen sharing: off"
+                        }
+                    }
+                    if (pending != null) {
+                        val id = pending.optInt("id")
+                        if (promptShownSessionId != id && projectionSessionId == null) {
+                            showScreenRequestDialog(id)
+                        }
+                    } else {
+                        promptShownSessionId = null
+                        TelemetryWorker.cancelScreenRequestNotification(this)
+                    }
+                }
+            } catch (e: ApiException) {
+                runOnUiThread {
+                    screenStatusText.text = "Screen sharing: status unavailable (HTTP ${e.status})"
+                }
+            } catch (_: Exception) {
+                runOnUiThread { screenStatusText.text = "Screen sharing: status unavailable" }
+            } finally {
+                screenCheckInFlight = false
+            }
+        }.start()
+    }
+
+    private fun showScreenRequestDialog(sessionId: Int) {
+        promptShownSessionId = sessionId
+        AlertDialog.Builder(this)
+            .setCancelable(false)
+            .setTitle(R.string.screen_request_title)
+            .setMessage(R.string.screen_request_message)
+            .setNegativeButton("Decline") { _, _ -> declineScreenSession(sessionId) }
+            .setPositiveButton("Approve and continue") { _, _ -> beginScreenApproval(sessionId) }
+            .show()
+    }
+
+    private fun beginScreenApproval(sessionId: Int) {
+        pendingSessionId = sessionId
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            Toast.makeText(this, R.string.screen_notification_rationale, Toast.LENGTH_LONG).show()
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
+            return
+        }
+        launchProjectionConsent(sessionId)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_NOTIFICATIONS) return
+        val sessionId = pendingSessionId ?: return
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            launchProjectionConsent(sessionId)
+        } else {
+            pendingSessionId = null
+            declineScreenSession(sessionId)
+            Toast.makeText(this, "Screen sharing needs the visible notification permission.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun launchProjectionConsent(sessionId: Int) {
+        projectionSessionId = sessionId
+        val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        startActivityForResult(manager.createScreenCaptureIntent(), REQUEST_MEDIA_PROJECTION)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_MEDIA_PROJECTION) return
+        val sessionId = projectionSessionId ?: return
+        projectionSessionId = null
+        pendingSessionId = null
+        if (resultCode != Activity.RESULT_OK || data == null) {
+            declineScreenSession(sessionId)
+            return
+        }
+        screenStatusText.text = "Screen sharing: starting..."
+        Thread {
+            try {
+                val api = apiClient() ?: throw IllegalStateException("Enrollment changed")
+                api.approveScreenSession(sessionId, Instant.now().toString())
+                MonitoringService.startScreen(this, resultCode, data, sessionId)
+                runOnUiThread {
+                    currentScreenSessionId = sessionId
+                    screenStatusText.text = "Screen sharing: ACTIVE — visible on screen"
+                    stopScreenButton.visibility = View.VISIBLE
+                    Toast.makeText(this, "Screen sharing started. Stop any time from here or the notification.", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                runCatching { apiClient()?.declineScreenSession(sessionId) }
+                runOnUiThread {
+                    screenStatusText.text = "Screen sharing: could not start"
+                    stopScreenButton.visibility = View.GONE
+                    Toast.makeText(this, "Screen sharing was not approved by the server.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun declineScreenSession(sessionId: Int) {
+        screenStatusText.text = "Screen sharing: declined"
+        stopScreenButton.visibility = View.GONE
+        Thread {
+            runCatching { apiClient()?.declineScreenSession(sessionId) }
+        }.start()
+    }
+
+    private fun stopCurrentScreenSession() {
+        val sessionId = currentScreenSessionId ?: return
+        stopScreenButton.isEnabled = false
+        MonitoringService.stopScreen(this)
+        Thread {
+            try {
+                apiClient()?.stopScreenSession(sessionId)
+            } catch (_: Exception) {
+                runCatching { apiClient()?.stopScreenSession(sessionId) }
+            }
+            runOnUiThread {
+                stopScreenButton.isEnabled = true
+                stopScreenButton.visibility = View.GONE
+                screenStatusText.text = "Screen sharing: off"
+                currentScreenSessionId = null
+            }
+        }.start()
     }
 
     private fun attemptEnroll() {
@@ -137,7 +325,7 @@ class MainActivity : AppCompatActivity() {
     private fun confirmUnenroll() {
         AlertDialog.Builder(this)
             .setTitle("Stop monitoring and unenroll?")
-            .setMessage("This clears the local enrollment token, stops the foreground service, cancels scheduled reports, and revokes the server-side token.")
+            .setMessage("This also ends any active screen session, clears the local enrollment token, stops the foreground service, cancels scheduled reports, and revokes the server-side token.")
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Stop and unenroll") { _, _ ->
                 unenrollButton.isEnabled = false
@@ -172,5 +360,10 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             .show()
+    }
+
+    companion object {
+        private const val REQUEST_NOTIFICATIONS = 102
+        private const val REQUEST_MEDIA_PROJECTION = 103
     }
 }

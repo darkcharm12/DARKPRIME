@@ -1,7 +1,13 @@
 package com.darkprime.app
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -29,6 +35,10 @@ class TelemetryWorker(appContext: Context, params: WorkerParameters) : Worker(ap
             val shouldUnenroll = (0 until (pending?.length() ?: 0)).any {
                 pending?.optString(it) == "unenroll"
             }
+            val screenRequested = (0 until (pending?.length() ?: 0)).any {
+                pending?.optString(it) == "screen_session"
+            }
+            if (screenRequested) showScreenRequestNotification()
             if (shouldUnenroll) {
                 runCatching { api.requestUnenroll() }
                 runCatching { api.confirmUnenroll() }
@@ -51,8 +61,42 @@ class TelemetryWorker(appContext: Context, params: WorkerParameters) : Worker(ap
         }
     }
 
+    private fun showScreenRequestNotification() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                REQUEST_CHANNEL_ID,
+                "DARKPRIME approval requests",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Prompts the owner to review a screen-sharing request."
+            }
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+        val open = PendingIntent.getActivity(
+            applicationContext,
+            2,
+            Intent(applicationContext, MainActivity::class.java).putExtra(EXTRA_OPEN_SCREEN_REQUEST, true),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(applicationContext, REQUEST_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat)
+            .setContentTitle("DARKPRIME screen-sharing request")
+            .setContentText("Open DARKPRIME to approve or decline. Nothing is shared until you approve.")
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .build()
+        NotificationManagerCompat.from(applicationContext).notify(REQUEST_NOTIFICATION_ID, notification)
+    }
+
     companion object {
         const val WORK_NAME = "darkprime-telemetry"
+        const val EXTRA_OPEN_SCREEN_REQUEST = "com.darkprime.app.OPEN_SCREEN_REQUEST"
+        private const val REQUEST_CHANNEL_ID = "darkprime_requests"
+        private const val REQUEST_NOTIFICATION_ID = 4202
+
+        fun cancelScreenRequestNotification(context: Context) {
+            NotificationManagerCompat.from(context).cancel(REQUEST_NOTIFICATION_ID)
+        }
 
         fun schedule(context: Context) {
             val constraints = Constraints.Builder()

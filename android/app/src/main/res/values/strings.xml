@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">DARKPRIME</string>
-    <string name="disclosure">DARKPRIME is a consent-based auditing app. While enrolled it periodically reports: Android version, device model, battery, storage, installed applications and their declared permissions, accessibility service list, and device-admin status. It does not access cameras, microphones, messages, contacts, call logs, browsing history, or credentials. A persistent notification is always shown while monitoring is active. You can stop monitoring and unenroll at any time.</string>
+    <string name="disclosure">DARKPRIME is a consent-based auditing app. While enrolled it periodically reports: Android version, device model, battery, storage, installed applications and their declared permissions, accessibility service list, and device-admin status. Screen sharing starts only after a separate approval and Android capture consent; the capture indicator and DARKPRIME notification stay visible. It does not access cameras, microphones, messages, contacts, call logs, browsing history, or credentials. You can stop screen sharing or monitoring and unenroll at any time.</string>
+    <string name="screen_request_title">Allow screen sharing?</string>
+    <string name="screen_request_message">A monitor has requested to view your screen. If you approve, DARKPRIME sends low-resolution screen frames over HTTPS so the monitor can guide you. The Android capture indicator and DARKPRIME foreground notification stay visible. You can stop instantly from this app or the notification. No taps, passwords, or other private data are captured intentionally.</string>
+    <string name="screen_notification_rationale">Screen sharing needs notification permission so the active-session notice and Stop action remain visible.</string>
 </resources>

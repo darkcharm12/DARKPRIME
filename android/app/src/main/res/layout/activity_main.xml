@@ -40,6 +40,15 @@
             android:text="@string/disclosure"
             android:textSize="14sp" />
 
+        <TextView
+            android:id="@+id/screenStatusText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Screen sharing: off"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
         <LinearLayout
             android:id="@+id/enrollPanel"
             android:layout_width="match_parent"
@@ -93,6 +102,14 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:text="Show device-admin status / activate optional admin" />
+
+        <Button
+            android:id="@+id/stopScreenButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="STOP SCREEN SHARING NOW"
+            android:visibility="gone" />
 
         <Button
             android:id="@+id/unenrollButton"

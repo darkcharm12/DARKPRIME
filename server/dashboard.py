@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import json
 import secrets
+from pathlib import Path
 
-from flask import (Blueprint, current_app, flash, g, redirect, render_template,
-                   request, session, url_for)
+from flask import (Blueprint, current_app, flash, g, jsonify, redirect,
+                   render_template, request, send_file, session, url_for)
 
 from .auth import (
     check_operator_login,
@@ -34,6 +35,25 @@ def check_csrf() -> bool:
     expected = session.get("csrf", "")
     provided = request.form.get("csrf", "")
     return bool(expected) and secrets.compare_digest(expected, provided)
+
+
+def _latest_screen_session(device_id: int):
+    return get_db().execute(
+        """SELECT * FROM screen_sessions WHERE device_id = ? ORDER BY id DESC LIMIT 1""",
+        (device_id,),
+    ).fetchone()
+
+
+def _screen_status_payload(row):
+    if not row:
+        return {"status": "none", "last_frame_at": None, "has_frame": False, "session_id": None}
+    frame = Path(current_app.config["SCREEN_FRAME_DIR"]) / f"session-{row['id']}.jpg"
+    return {
+        "status": row["status"],
+        "last_frame_at": row["last_frame_at"],
+        "has_frame": frame.is_file(),
+        "session_id": row["id"],
+    }
 
 
 @bp.get("/")
@@ -111,8 +131,12 @@ def device_detail(device_id: int):
                     id DESC LIMIT 100""",
         (device_id,),
     ).fetchall()
-    return render_template("device_detail.html", device=device, latest=latest,
-                           received_at=latest_row["received_at"] if latest_row else None, alerts=alerts)
+    screen_session = _latest_screen_session(device_id)
+    return render_template(
+        "device_detail.html", device=device, latest=latest,
+        received_at=latest_row["received_at"] if latest_row else None, alerts=alerts,
+        screen_session=screen_session, screen_status=_screen_status_payload(screen_session),
+    )
 
 
 @bp.get("/devices/<int:device_id>/history")
@@ -128,6 +152,106 @@ def history(device_id: int):
         (device_id,),
     ).fetchall()
     return render_template("history.html", device=device, reports=rows, json=json)
+
+
+@bp.post("/devices/<int:device_id>/screen/request")
+@require_operator
+def screen_request(device_id: int):
+    if not check_csrf():
+        return "invalid_csrf", 400
+    db = get_db()
+    device = db.execute(
+        "SELECT 1 FROM devices WHERE id = ? AND operator_id = ? AND status = 'active'",
+        (device_id, g.operator["id"]),
+    ).fetchone()
+    if not device:
+        return "Device not found", 404
+    now = utcnow()
+    previous = db.execute(
+        """SELECT id, frame_path FROM screen_sessions
+           WHERE device_id = ? AND status IN ('pending', 'active', 'stopping')""",
+        (device_id,),
+    ).fetchall()
+    for row in previous:
+        if row["frame_path"]:
+            Path(row["frame_path"]).unlink(missing_ok=True)
+    db.execute(
+        """UPDATE screen_sessions SET status = 'expired', stopped_at = ?
+           WHERE device_id = ? AND status IN ('pending', 'active', 'stopping')""",
+        (now, device_id),
+    )
+    db.execute(
+        """INSERT INTO screen_sessions (device_id, operator_id, status, requested_at)
+           VALUES (?,?, 'pending', ?)""",
+        (device_id, g.operator["id"], now),
+    )
+    audit(db, "screen_session.requested", operator_id=g.operator["id"], device_id=device_id,
+          detail="dashboard")
+    db.commit()
+    flash("Screen sharing requested. The owner must approve it in the companion app.")
+    return redirect(url_for("dashboard.device_detail", device_id=device_id))
+
+
+@bp.post("/devices/<int:device_id>/screen/<int:session_id>/stop")
+@require_operator
+def screen_stop(device_id: int, session_id: int):
+    if not check_csrf():
+        return "invalid_csrf", 400
+    db = get_db()
+    row = db.execute(
+        """SELECT s.* FROM screen_sessions s JOIN devices d ON d.id = s.device_id
+           WHERE s.id = ? AND s.device_id = ? AND d.operator_id = ?""",
+        (session_id, device_id, g.operator["id"]),
+    ).fetchone()
+    if not row:
+        return "Session not found", 404
+    if row["status"] not in ("stopped", "declined", "expired"):
+        now = utcnow()
+        if row["status"] == "pending":
+            db.execute(
+                """UPDATE screen_sessions SET status = 'stopped', stop_requested_at = ?, stopped_at = ?
+                   WHERE id = ?""",
+                (now, now, session_id),
+            )
+        else:
+            db.execute(
+                """UPDATE screen_sessions SET status = 'stopping', stop_requested_at = ?
+                   WHERE id = ? AND stop_requested_at IS NULL""",
+                (now, session_id),
+            )
+        audit(db, "screen_session.stop_requested", operator_id=g.operator["id"],
+              device_id=device_id, detail="dashboard")
+        db.commit()
+        flash("Stop requested. The app will end the session on its next check-in.")
+    return redirect(url_for("dashboard.device_detail", device_id=device_id))
+
+
+@bp.get("/devices/<int:device_id>/screen/status")
+@require_operator
+def screen_status(device_id: int):
+    device = get_db().execute(
+        "SELECT 1 FROM devices WHERE id = ? AND operator_id = ?",
+        (device_id, g.operator["id"]),
+    ).fetchone()
+    if not device:
+        return jsonify({"error": "device_not_found"}), 404
+    return jsonify(_screen_status_payload(_latest_screen_session(device_id)))
+
+
+@bp.get("/devices/<int:device_id>/screen/<int:session_id>/frame")
+@require_operator
+def screen_frame(device_id: int, session_id: int):
+    row = get_db().execute(
+        """SELECT s.* FROM screen_sessions s JOIN devices d ON d.id = s.device_id
+           WHERE s.id = ? AND s.device_id = ? AND d.operator_id = ?""",
+        (session_id, device_id, g.operator["id"]),
+    ).fetchone()
+    if not row:
+        return "Session not found", 404
+    frame = Path(current_app.config["SCREEN_FRAME_DIR"]) / f"session-{session_id}.jpg"
+    if not frame.is_file():
+        return "Frame not available", 404
+    return send_file(frame, mimetype="image/jpeg", conditional=False, max_age=0)
 
 
 @bp.route("/enroll", methods=["GET", "POST"])

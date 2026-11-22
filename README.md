@@ -16,12 +16,15 @@ any time from the app notification or the main screen.
 - Generates deterministic security alerts (outdated Android, unknown accessibility services,
   extra device admins, no screen lock, USB debugging, new apps, changed permissions, and more).
 - Provides an operator dashboard built with Flask and a REST API consumed by the Kotlin app.
+- Supports optional owner-approved screen sharing: explicit in-app approval, Android capture
+  consent, visible capture indicator, one foreground notification, and instant stop controls.
 - Works across Wi-Fi and mobile data because communication goes through an HTTPS server you
   control (local HTTPS for labs, or a cloud VPS with a real domain and trusted certificate).
 
 ## What it deliberately does NOT do
 
-- No hidden installation, no stealth, no background concealment.
+- No hidden installation, no stealth, no background concealment. Screen sharing never starts
+  without a separate owner approval and the Android system capture-consent dialog.
 - No camera, microphone, SMS, contacts, call logs, browsing history, file or credential access.
 - No bypass of Android permissions or user consent.
 - No ADB exposure to the public internet. ADB is never used by DARKPRIME at all.
@@ -52,7 +55,8 @@ bash scripts/run_server.sh --tls --host 0.0.0.0
 # Open https://<kali-ip>:8443/ and accept the self-signed certificate warning
 ```
 
-Then follow `docs/ANDROID_SETUP.md` to install the app and enroll a device.
+Then follow `docs/ANDROID_SETUP.md` to install the app and enroll a device. For owner-approved
+screen sharing and cross-network setup, see `docs/SCREEN_MONITORING.md`.
 
 For production / remote monitoring over mobile data, follow `docs/INSTALL_KALI.md` section 5
 (cloud VPS + real domain + Let's Encrypt + nginx + gunicorn).

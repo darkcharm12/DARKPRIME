@@ -50,6 +50,11 @@ Rejections: `403 explicit_consent_required`, `401 invalid_enrollment_token`,
 | GET | `/api/devices/<id>/history?limit=50` | Stored snapshots, newest first (max 500). |
 | GET | `/api/devices/<id>/alerts` | Alerts for a device. |
 | POST | `/api/devices/<id>/unenroll` | Request unenrollment; the app confirms and revokes its token. |
+| POST | `/api/devices/<id>/screen-sessions` | Request an owner-approved screen session; previous live sessions are expired. |
+| GET | `/api/devices/<id>/screen-sessions` | List recent screen sessions for the device. |
+| GET | `/api/screen-sessions/<session_id>` | Get one screen session. |
+| GET | `/api/screen-sessions/<session_id>/frame` | Latest approved JPEG frame (404 before the first upload). |
+| POST | `/api/screen-sessions/<session_id>/stop` | Request stop (`stopping` for active sessions, immediate `stopped` for pending). |
 
 ## Device endpoints
 
@@ -59,6 +64,18 @@ Rejections: `403 explicit_consent_required`, `401 invalid_enrollment_token`,
 | POST | `/api/devices/me/telemetry` | Submit a snapshot; returns alerts created and pending actions. Enforced minimum interval (15s default). |
 | POST | `/api/devices/me/unenroll/request` | Owner requests unenrollment. |
 | POST | `/api/devices/me/unenroll/confirm` | Owner revokes the token; device becomes `unenrolled`. |
+| GET | `/api/devices/me/screen-sessions` | Pending/active session plus recent history. Also surfaced as `screen_session` in `pending_actions`. |
+| POST | `/api/devices/me/screen-sessions/<id>/approve` | Owner approval; requires `{"consent":{"accepted":true,"at":"..."}}`. |
+| POST | `/api/devices/me/screen-sessions/<id>/decline` | Owner declines a pending request. |
+| POST | `/api/devices/me/screen-sessions/<id>/heartbeat` | Status poll; reports `stop_requested`. |
+| POST | `/api/devices/me/screen-sessions/<id>/frame` | Upload one `image/jpeg` body (single frame, <1 MB by default). |
+| POST | `/api/devices/me/screen-sessions/<id>/stop` | Owner ends the session and removes the stored frame. |
+
+## Screen session lifecycle
+
+`pending → active → stopping → stopped`; the owner may also return `pending → declined`, and a new
+request expires any previous `pending`/`active`/`stopping` session. The frame is written to
+`DARKPRIME_SCREEN_FRAME_DIR` (default `data/screen_frames/`) and served only to the owning operator.
 
 Telemetry shape (abbreviated):
 

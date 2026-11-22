@@ -21,6 +21,7 @@ MIN_TELEMETRY_INTERVAL_SECONDS = int(os.environ.get("DARKPRIME_MIN_TELEMETRY_INT
 POLL_INTERVAL_SECONDS = int(os.environ.get("DARKPRIME_POLL_INTERVAL", "900"))
 MIN_SUPPORTED_ANDROID_SDK = int(os.environ.get("DARKPRIME_MIN_ANDROID_SDK", "26"))
 MAX_APPS = int(os.environ.get("DARKPRIME_MAX_APPS", "1000"))
+SCREEN_FRAME_DIR = Path(os.environ.get("DARKPRIME_SCREEN_FRAME_DIR", str(DATA_DIR / "screen_frames")))
 
 TLS_CERT = Path(os.environ.get("DARKPRIME_TLS_CERT", str(BASE_DIR / "server" / "certs" / "server.crt")))
 TLS_KEY = Path(os.environ.get("DARKPRIME_TLS_KEY", str(BASE_DIR / "server" / "certs" / "server.key")))
@@ -39,6 +40,7 @@ def load_config() -> dict:
         "POLL_INTERVAL_SECONDS": POLL_INTERVAL_SECONDS,
         "MIN_SUPPORTED_ANDROID_SDK": MIN_SUPPORTED_ANDROID_SDK,
         "MAX_APPS": MAX_APPS,
+        "SCREEN_FRAME_DIR": str(SCREEN_FRAME_DIR),
         "TLS_CERT": str(TLS_CERT),
         "TLS_KEY": str(TLS_KEY),
         "JSON_SORT_KEYS": False,

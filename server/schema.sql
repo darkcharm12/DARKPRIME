@@ -43,6 +43,23 @@ CREATE TABLE IF NOT EXISTS devices (
     unenrolled_at        TEXT
 );
 
+CREATE TABLE IF NOT EXISTS screen_sessions (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id         INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    operator_id       INTEGER NOT NULL REFERENCES operators(id) ON DELETE CASCADE,
+    status            TEXT NOT NULL DEFAULT 'pending'
+                      CHECK (status IN ('pending', 'active', 'stopping', 'stopped', 'declined', 'expired')),
+    requested_at      TEXT NOT NULL,
+    approved_at       TEXT,
+    connected_at      TEXT,
+    last_seen_at      TEXT,
+    last_frame_at     TEXT,
+    stop_requested_at TEXT,
+    stopped_at        TEXT,
+    consent_at        TEXT,
+    frame_path        TEXT
+);
+
 CREATE TABLE IF NOT EXISTS telemetry (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     device_id   INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
@@ -73,6 +90,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at TEXT NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS idx_screen_sessions_device_status ON screen_sessions(device_id, status, id DESC);
 CREATE INDEX IF NOT EXISTS idx_telemetry_device_received ON telemetry(device_id, received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_alerts_device_created ON alerts(device_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_devices_operator_status ON devices(operator_id, status);

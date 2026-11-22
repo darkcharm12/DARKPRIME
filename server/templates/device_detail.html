@@ -22,6 +22,88 @@
   </form>
 </section>
 
+<section class="card" id="screenPanel">
+  <h2>Remote screen session</h2>
+  <p class="muted">
+    Requires explicit owner approval in the companion app. The Android capture indicator and
+    DARKPRIME foreground notification stay visible; the owner can stop at any time.
+  </p>
+  <p>
+    Status: <strong id="screenState">{{ screen_status.status }}</strong>
+    <span class="muted" id="screenMeta">
+      {% if screen_status.last_frame_at %}· last frame {{ screen_status.last_frame_at }}{% endif %}
+    </span>
+  </p>
+  {% if device['status'] == 'active' %}
+  <form method="post" action="{{ url_for('dashboard.screen_request', device_id=device['id']) }}" class="inline"
+        onsubmit="return confirm('Request screen sharing? The owner must approve it in the app.');">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <button type="submit" id="screenRequestButton" {{ 'disabled' if screen_session and screen_session['status'] in ['pending', 'active', 'stopping'] else '' }}>
+      Request screen sharing
+    </button>
+  </form>
+  {% endif %}
+  <form method="post" action="{{ url_for('dashboard.screen_stop', device_id=device['id'], session_id=screen_session['id'] if screen_session else 0) }}"
+        class="inline" id="screenStopForm"
+        {% if not screen_session or screen_session['status'] not in ['pending', 'active', 'stopping'] %}hidden{% endif %}>
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <button class="danger" type="submit"
+            onclick="return confirm('Stop screen sharing immediately?');">Stop screen sharing</button>
+  </form>
+  <div id="screenFrameWrap" {% if not screen_status.has_frame %}hidden{% endif %}>
+    <img id="screenFrame" alt="Latest approved screen frame"
+         src="{% if screen_status.has_frame %}{{ url_for('dashboard.screen_frame', device_id=device['id'], session_id=screen_session['id']) }}{% endif %}"
+         style="max-width:100%;border:1px solid #333;border-radius:6px;margin-top:12px;">
+  </div>
+  <p class="muted" id="screenEmpty" {% if screen_status.has_frame %}hidden{% endif %}>
+    No approved frame has been uploaded yet.
+  </p>
+</section>
+
+<script>
+(function () {
+  const statusUrl = "{{ url_for('dashboard.screen_status', device_id=device['id']) }}";
+  const frameTemplate = "{{ url_for('dashboard.screen_frame', device_id=device['id'], session_id=0) }}".replace("/0/frame", "/SID/frame");
+  const state = document.getElementById("screenState");
+  const meta = document.getElementById("screenMeta");
+  const frame = document.getElementById("screenFrame");
+  const frameWrap = document.getElementById("screenFrameWrap");
+  const empty = document.getElementById("screenEmpty");
+  const stopForm = document.getElementById("screenStopForm");
+  const requestButton = document.getElementById("screenRequestButton");
+  const liveStates = ["pending", "active", "stopping"];
+  let lastSessionId = {{ screen_status.session_id or 'null' }};
+
+  async function refreshScreen() {
+    try {
+      const response = await fetch(statusUrl, {headers: {"Accept": "application/json"}});
+      if (!response.ok) return;
+      const data = await response.json();
+      state.textContent = data.status;
+      meta.textContent = data.last_frame_at ? "· last frame " + data.last_frame_at : "";
+      const live = liveStates.includes(data.status);
+      if (requestButton) requestButton.disabled = live;
+      if (stopForm) stopForm.hidden = !live;
+      if (data.session_id && data.session_id !== lastSessionId) {
+        const action = stopForm.getAttribute("action");
+        stopForm.setAttribute("action", action.replace(/\/\d+\/stop$/, "/" + data.session_id + "/stop"));
+        lastSessionId = data.session_id;
+      }
+      if (data.has_frame && data.session_id) {
+        frame.src = frameTemplate.replace("SID", data.session_id) + "?t=" + Date.now();
+        frameWrap.hidden = false;
+        empty.hidden = true;
+      }
+    } catch (error) {
+      state.textContent = "status unavailable";
+    }
+  }
+
+  refreshScreen();
+  setInterval(refreshScreen, 3000);
+})();
+</script>
+
 {% if latest %}
 <section class="grid">
   <div class="card">

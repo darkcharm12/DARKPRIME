@@ -3,9 +3,11 @@
 ## What the owner will see
 
 The app is called **DARKPRIME**. It never installs silently. After installation it shows a plain
-status (`NOT ENROLLED` or `MONITORING ACTIVE`), the full disclosure text, the server URL, and a
-large **STOP MONITORING AND UNENROLL** button. While enrolled, a persistent notification is
-displayed with **Review** and **Stop** actions. There is no hidden mode.
+status (`NOT ENROLLED` or `MONITORING ACTIVE`), a `Screen sharing: off/ACTIVE` status line, the full
+disclosure text, the server URL, a **STOP SCREEN SHARING NOW** button (visible only during a
+session), and a large **STOP MONITORING AND UNENROLL** button. While enrolled, a persistent
+notification is displayed with **Review** and **Stop** actions; its title changes while screen
+sharing is active, and the same **Stop** action ends screen sharing first. There is no hidden mode.
 
 ## 1. Build the APK
 
@@ -54,6 +56,7 @@ expires after 72 hours by default.
 | `INTERNET`, `ACCESS_NETWORK_STATE` | HTTPS communication with your server; report network type. |
 | `POST_NOTIFICATIONS` | Show the mandatory visible monitoring notification (Android 13+). |
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` | Keep the visible status notification and periodic audit alive. |
+| `FOREGROUND_SERVICE_MEDIA_PROJECTION` | Keep the same visible notification alive while an owner-approved screen session runs (Android 14+). |
 | `RECEIVE_BOOT_COMPLETED` | Re-show the visible status after reboot while still enrolled. |
 | `QUERY_ALL_PACKAGES` | List installed packages for the owner-approved audit on Android 11+. Only package metadata is read. |
 | Device admin (optional, activated only by the owner) | Allows DARKPRIME to honestly report its own device-admin status. No policies are enforced. |
@@ -61,7 +64,25 @@ expires after 72 hours by default.
 The app requests **no** camera, microphone, SMS, contacts, call log, location, storage-file or
 credential permissions.
 
-## 5. Samsung-specific notes
+## 5. Owner-approved screen sharing
+
+1. The operator requests screen sharing in **Device detail → Request screen sharing**.
+2. The app shows a visible notification: *DARKPRIME screen-sharing request*. On the next UI check-in
+   it also shows an explanation dialog stating exactly what is sent and that it can be stopped.
+3. The owner taps **Approve and continue**. If notification permission is missing on Android 13+,
+   it is requested here with the visible-session rationale, not at app startup.
+4. Android's own **MediaProjection** consent dialog appears. Dismissing/cancelling it declines the
+   request; nothing is captured.
+5. During the session the app says `Screen sharing: ACTIVE`, a **STOP SCREEN SHARING NOW** button is
+   visible, the Android capture indicator is visible, and the DARKPRIME notification says
+   *screen sharing active* with a **Stop screen** action. There is no separate duplicate notification.
+6. The dashboard polls `/devices/<id>/screen/status` every 3 seconds and shows the latest frame.
+   Stopping removes the frame from the server.
+
+The app polls for requests every 5 seconds while open and on every telemetry check-in while in the
+background. No session can begin without the two explicit approvals above.
+
+## 6. Samsung-specific notes
 
 - Samsung Galaxy devices running Android 8+ are supported; One UI does not change the APIs used.
 - **Settings → Biometrics and security → Install unknown apps** may be needed to sideload the APK.
@@ -76,19 +97,21 @@ credential permissions.
 - Device-admin status is read through the standard `DevicePolicyManager`; activating DARKPRIME's
   optional admin receiver grants no wipe/lock/password policies (the policy list is empty).
 
-## 6. Stop monitoring / unenroll
+## 7. Stop monitoring / unenroll
 
 The owner can do any of the following:
 
-- Tap **Stop** in the persistent notification.
-- Open the app and tap **STOP MONITORING AND UNENROLL**, then confirm.
+- Tap **Stop screen** in the persistent notification to end only screen sharing.
+- Open the app and tap **STOP SCREEN SHARING NOW** to end only screen sharing.
+- Tap **Stop** in the persistent notification, or open the app and tap **STOP MONITORING AND
+  UNENROLL**, then confirm to stop everything and unenroll.
 - Ask the operator to click **Request unenrollment** in the dashboard.
 
 All paths clear the locally stored token, cancel scheduled reports, stop the foreground service,
 and revoke the server-side bearer token. The dashboard marks the device `unenrolled` and records
 the event in the audit log. Re-enrollment requires a new one-time token and fresh consent.
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 | Symptom | Fix |
 | --- | --- |
@@ -96,4 +119,6 @@ the event in the audit log. Re-enrollment requires a new one-time token and fres
 | Enrollment fails HTTP 401 | Token wrong, expired or already used. Ask for a new one. |
 | Enrollment fails HTTP 403 | Consent checkbox was not ticked. |
 | TLS error on Android | Use a publicly trusted certificate in production. For a lab, install the lab CA as a system certificate or use a debug build (debug builds trust user-installed CAs). |
+| No screen request appears | Check internet access; open the app to force a check-in. Background requests appear via the visible approval notification on the next telemetry check-in. |
+| Screen sharing stops immediately | The owner denied Android capture consent or stopped it; nothing is captured without approval. Check that notifications are allowed for DARKPRIME on Android 13+. |
 | No reports after enrollment | Check internet access, notification permission, battery optimizations, and the server logs. |
