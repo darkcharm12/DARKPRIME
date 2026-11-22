@@ -40,7 +40,7 @@ def test_enrollment_token_is_single_use(client):
     assert second.get_json()["error"] == "enrollment_token_already_used"
 
     duplicate_uuid = enroll(client, create_enrollment_token(client), uuid="device-a")
-    assert duplicate_uuid.status_code == 409
+    assert duplicate_uuid.status_code == 201
 
 
 def test_telemetry_history_and_alerts(client):

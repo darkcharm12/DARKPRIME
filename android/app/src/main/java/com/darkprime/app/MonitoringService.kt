@@ -37,6 +37,13 @@ class MonitoringService : Service() {
     private var activeSessionId: Int? = null
     private var screenCapturing = false
     private var lastFrameAtMs = 0L
+    private val captureRunnable = object : Runnable {
+        override fun run() {
+            if (!screenCapturing) return
+            captureLatestFrame()
+            captureHandler?.postDelayed(this, 1500L)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -193,7 +200,6 @@ class MonitoringService : Service() {
         imageReader = reader
         captureThread = HandlerThread("darkprime-capture").apply { start() }
         captureHandler = Handler(captureThread!!.looper)
-        reader.setOnImageAvailableListener({ source -> captureFrame(source) }, captureHandler)
         virtualDisplay = mediaProjection?.createVirtualDisplay(
             "DARKPRIME",
             width,
@@ -204,16 +210,20 @@ class MonitoringService : Service() {
             null,
             captureHandler
         )
+        captureHandler?.post(captureRunnable)
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(true))
     }
 
-    private fun captureFrame(reader: ImageReader) {
+    private fun captureLatestFrame() {
         val sessionId = activeSessionId ?: return
-        if (!screenCapturing || System.currentTimeMillis() - lastFrameAtMs < 1500L) return
+        val reader = imageReader ?: return
+        if (!screenCapturing) return
+        val now = System.currentTimeMillis()
+        if (now - lastFrameAtMs < 1400L) return
         val image = reader.acquireLatestImage() ?: return
         try {
             val bytes = encodeFrame(image) ?: return
-            lastFrameAtMs = System.currentTimeMillis()
+            lastFrameAtMs = now
             val api = apiClient() ?: return
             val heartbeat = api.screenHeartbeat(sessionId)
             if (heartbeat.optString("status") != "active" || heartbeat.optBoolean("stop_requested")) {
@@ -261,6 +271,7 @@ class MonitoringService : Service() {
         if (!screenCapturing && sessionId == null) return
         screenCapturing = false
         activeSessionId = null
+        captureHandler?.removeCallbacks(captureRunnable)
         imageReader?.setOnImageAvailableListener(null, null)
         virtualDisplay?.release()
         mediaProjection?.stop()

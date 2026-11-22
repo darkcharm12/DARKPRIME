@@ -1,4 +1,5 @@
 from server.tests.conftest import auth, enrolled_device, enrollment_token, login, payload, utcnow
+from server.db import get_db
 
 
 def test_enrollment_requires_explicit_consent(client, app):
@@ -29,9 +30,12 @@ def test_enrollment_rejects_unknown_and_reused_tokens(client, app):
     assert device["token"]
 
 
-def test_duplicate_uuid_rejected(client, app):
-    enrolled_device(client, app, uuid="duplicate")
+def test_duplicate_uuid_reenrolls_device(client, app):
+    first = enrolled_device(client, app, uuid="duplicate")
     response = client.post("/api/devices/enroll", json={
         "enrollment_token": enrollment_token(app), "device_uuid": "duplicate", "consent": {"accepted": True},
     })
-    assert response.status_code == 409
+    assert response.status_code == 201
+    body = response.get_json()
+    assert body["device_id"] == first["id"]
+    assert body["token"] != first["token"]

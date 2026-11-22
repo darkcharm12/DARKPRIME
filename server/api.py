@@ -181,24 +181,41 @@ def enroll_device():
         return error("enrollment_token_already_used", 409)
     if parse_time(token_row["expires_at"]) <= parse_time(utcnow()):
         return error("enrollment_token_expired", 410)
-    if db.execute("SELECT 1 FROM devices WHERE device_uuid = ?", (uuid,)).fetchone():
-        return error("device_already_enrolled", 409)
+    existing = db.execute("SELECT * FROM devices WHERE device_uuid = ?", (uuid,)).fetchone()
 
     device_token = new_token(32)
     now = utcnow()
-    cur = db.execute(
-        """INSERT INTO devices
-           (operator_id, device_uuid, name, model, android_version, token_hash, consent_at, enrolled_at)
-           VALUES (?,?,?,?,?,?,?,?)""",
-        (
-            token_row["operator_id"], uuid,
-            str(data.get("name") or "Android device")[:120],
-            str(data.get("model") or "")[:120],
-            str(data.get("android_version") or "")[:80],
-            hash_token(device_token), str(consent.get("at") or now)[:40], now,
-        ),
-    )
-    device_id = cur.lastrowid
+    if existing:
+        db.execute(
+            """UPDATE devices
+               SET operator_id = ?, name = ?, model = ?, android_version = ?,
+                   token_hash = ?, consent_at = ?, enrolled_at = ?, status = 'active',
+                   last_seen_at = ?, unenroll_requested_at = NULL, unenrolled_at = NULL
+               WHERE id = ?""",
+            (
+                token_row["operator_id"],
+                str(data.get("name") or "Android device")[:120],
+                str(data.get("model") or "")[:120],
+                str(data.get("android_version") or "")[:80],
+                hash_token(device_token), str(consent.get("at") or now)[:40], now, now,
+                existing["id"],
+            ),
+        )
+        device_id = existing["id"]
+    else:
+        cur = db.execute(
+            """INSERT INTO devices
+               (operator_id, device_uuid, name, model, android_version, token_hash, consent_at, enrolled_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (
+                token_row["operator_id"], uuid,
+                str(data.get("name") or "Android device")[:120],
+                str(data.get("model") or "")[:120],
+                str(data.get("android_version") or "")[:80],
+                hash_token(device_token), str(consent.get("at") or now)[:40], now,
+            ),
+        )
+        device_id = cur.lastrowid
     db.execute(
         "UPDATE enrollment_tokens SET used_at = ?, device_id = ? WHERE id = ?",
         (now, device_id, token_row["id"]),
