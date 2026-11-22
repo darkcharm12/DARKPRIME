@@ -70,7 +70,8 @@ class TelemetryWorker(appContext: Context, params: WorkerParameters) : Worker(ap
             ).apply {
                 description = "Prompts the owner to review a screen-sharing request."
             }
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+            applicationContext.getSystemService(NotificationManager::class.java)
+                .createNotificationChannel(channel)
         }
         val open = PendingIntent.getActivity(
             applicationContext,
