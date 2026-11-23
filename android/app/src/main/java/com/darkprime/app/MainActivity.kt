@@ -359,7 +359,7 @@ class MainActivity : AppCompatActivity() {
                 Thread {
                     try {
                         val api = ApiClient(url, manager.deviceToken ?: "")
-                        api.heartbeat(Instant.now().toString())
+                        api.myDevice()
                         EnrollmentManager(applicationContext).save(url, manager.deviceToken ?: "", manager.deviceId, manager.consentAt ?: "")
                         runOnUiThread {
                             Toast.makeText(this, "Server URL updated.", Toast.LENGTH_LONG).show()
