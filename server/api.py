@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Blueprint, current_app, g, jsonify, request, send_file
@@ -68,10 +69,22 @@ def _frame_path(session_id: int) -> Path:
 
 
 def _screen_session_public(row) -> dict:
+    status = row["status"]
+    last_seen = row["last_seen_at"]
+    if status in ("active", "stopping") and last_seen:
+        try:
+            seen = datetime.fromisoformat(str(last_seen).replace("Z", "+00:00"))
+            if seen.tzinfo is None:
+                seen = seen.replace(tzinfo=timezone.utc)
+            if (datetime.now(timezone.utc) - seen).total_seconds() > 90:
+                status = "disconnected"
+        except Exception:
+            pass
     return {
         "id": row["id"],
         "device_id": row["device_id"],
-        "status": row["status"],
+        "status": status,
+        "db_status": row["status"],
         "requested_at": row["requested_at"],
         "approved_at": row["approved_at"],
         "connected_at": row["connected_at"],
@@ -475,12 +488,32 @@ def stop_screen_session(session_id: int):
                WHERE id = ?""",
             (now, now, session_id),
         )
-    else:
-        db.execute(
-            """UPDATE screen_sessions SET status = 'stopping', stop_requested_at = ?
-               WHERE id = ? AND stop_requested_at IS NULL""",
-            (now, session_id),
-        )
+    elif row["status"] in ("active", "stopping"):
+        last_seen = row["last_seen_at"]
+        stale = False
+        if last_seen:
+            try:
+                seen = datetime.fromisoformat(str(last_seen).replace("Z", "+00:00"))
+                if seen.tzinfo is None:
+                    seen = seen.replace(tzinfo=timezone.utc)
+                stale = (datetime.now(timezone.utc) - seen).total_seconds() > 90
+            except Exception:
+                stale = False
+        if stale:
+            db.execute(
+                """UPDATE screen_sessions SET status = 'stopped', stop_requested_at = ?, stopped_at = ?
+                   WHERE id = ?""",
+                (now, now, session_id),
+            )
+            frame = _frame_path(session_id)
+            if frame.is_file():
+                frame.unlink(missing_ok=True)
+        else:
+            db.execute(
+                """UPDATE screen_sessions SET status = 'stopping', stop_requested_at = ?
+                   WHERE id = ? AND stop_requested_at IS NULL""",
+                (now, session_id),
+            )
     audit(db, "screen_session.stop_requested", operator_id=g.operator["id"],
           device_id=row["device_id"], detail=f"session={session_id}")
     db.commit()

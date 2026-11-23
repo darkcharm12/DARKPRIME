@@ -45,7 +45,7 @@
   {% endif %}
   <form method="post" action="{{ url_for('dashboard.screen_stop', device_id=device['id'], session_id=screen_session['id'] if screen_session else 0) }}"
         class="inline" id="screenStopForm"
-        {% if not screen_session or screen_session['status'] not in ['pending', 'active', 'stopping'] %}hidden{% endif %}>
+        {% if not screen_session or screen_session['status'] not in ['pending', 'active', 'stopping', 'disconnected'] %}hidden{% endif %}>
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <button class="danger" type="submit"
             onclick="return confirm('Stop screen sharing immediately?');">Stop screen sharing</button>
@@ -71,7 +71,7 @@
   const empty = document.getElementById("screenEmpty");
   const stopForm = document.getElementById("screenStopForm");
   const requestButton = document.getElementById("screenRequestButton");
-  const liveStates = ["pending", "active", "stopping"];
+  const liveStates = ["pending", "active", "stopping", "disconnected"];
   let lastSessionId = {{ screen_status.session_id or 'null' }};
 
   async function refreshScreen() {
@@ -93,6 +93,12 @@
         frame.src = frameTemplate.replace("SID", data.session_id) + "?t=" + Date.now();
         frameWrap.hidden = false;
         empty.hidden = true;
+      } else if (!data.has_frame) {
+        frameWrap.hidden = true;
+        empty.hidden = false;
+      }
+      if (data.status === "disconnected") {
+        meta.textContent = (data.last_frame_at ? "· last frame " + data.last_frame_at : "") + " · device unreachable/network changed";
       }
     } catch (error) {
       state.textContent = "status unavailable";

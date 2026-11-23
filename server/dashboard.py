@@ -48,8 +48,21 @@ def _screen_status_payload(row):
     if not row:
         return {"status": "none", "last_frame_at": None, "has_frame": False, "session_id": None}
     frame = Path(current_app.config["SCREEN_FRAME_DIR"]) / f"session-{row['id']}.jpg"
+    status = row["status"]
+    last_seen = row["last_seen_at"]
+    if status in ("active", "stopping") and last_seen:
+        try:
+            from datetime import datetime, timezone
+            seen = datetime.fromisoformat(str(last_seen).replace("Z", "+00:00"))
+            if seen.tzinfo is None:
+                seen = seen.replace(tzinfo=timezone.utc)
+            if (datetime.now(timezone.utc) - seen).total_seconds() > 90:
+                status = "disconnected"
+        except Exception:
+            pass
     return {
-        "status": row["status"],
+        "status": status,
+        "db_status": row["status"],
         "last_frame_at": row["last_frame_at"],
         "has_frame": frame.is_file(),
         "session_id": row["id"],
@@ -213,12 +226,34 @@ def screen_stop(device_id: int, session_id: int):
                    WHERE id = ?""",
                 (now, now, session_id),
             )
-        else:
-            db.execute(
-                """UPDATE screen_sessions SET status = 'stopping', stop_requested_at = ?
-                   WHERE id = ? AND stop_requested_at IS NULL""",
-                (now, session_id),
-            )
+        elif row["status"] in ("active", "stopping"):
+            # If device hasn't checked in recently, mark stopped locally so UI is not stuck.
+            last_seen = row["last_seen_at"]
+            stale = False
+            if last_seen:
+                try:
+                    from datetime import datetime, timezone
+                    seen = datetime.fromisoformat(str(last_seen).replace("Z", "+00:00"))
+                    if seen.tzinfo is None:
+                        seen = seen.replace(tzinfo=timezone.utc)
+                    stale = (datetime.now(timezone.utc) - seen).total_seconds() > 90
+                except Exception:
+                    stale = False
+            if stale:
+                db.execute(
+                    """UPDATE screen_sessions SET status = 'stopped', stop_requested_at = ?, stopped_at = ?
+                       WHERE id = ?""",
+                    (now, now, session_id),
+                )
+                frame = Path(current_app.config["SCREEN_FRAME_DIR"]) / f"session-{session_id}.jpg"
+                if frame.is_file():
+                    frame.unlink(missing_ok=True)
+            else:
+                db.execute(
+                    """UPDATE screen_sessions SET status = 'stopping', stop_requested_at = ?
+                       WHERE id = ? AND stop_requested_at IS NULL""",
+                    (now, session_id),
+                )
         audit(db, "screen_session.stop_requested", operator_id=g.operator["id"],
               device_id=device_id, detail="dashboard")
         db.commit()

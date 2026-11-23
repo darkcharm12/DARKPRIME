@@ -13,8 +13,8 @@ if ! command -v cloudflared >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! curl -sk https://192.168.0.140:8443/api/health >/dev/null && ! curl -sk https://127.0.0.1:8443/api/health >/dev/null; then
-  echo "Local server not reachable on :8443. Start it first:" >&2
+if ! curl -sk https://127.0.0.1:8443/api/health >/dev/null; then
+  echo "Local server not reachable on 127.0.0.1:8443. Start it first:" >&2
   echo "  cd $ROOT && bash scripts/run_server.sh --tls --host 0.0.0.0" >&2
   exit 1
 fi
@@ -31,7 +31,7 @@ is_running() {
   if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
     return 0
   fi
-  pgrep -f "cloudflared tunnel --url https://192.168.0.140:8443" >/dev/null 2>&1
+  pgrep -f "cloudflared tunnel --url https://127.0.0.1:8443" >/dev/null 2>&1
 }
 
 if [[ "$FORCE" != "--force" ]] && is_running; then
@@ -52,7 +52,7 @@ pkill -f "cloudflared tunnel --url https://192.168.0.140:8443" >/dev/null 2>&1 |
 sleep 1
 : > "$TUNNEL_LOG"
 
-nohup cloudflared tunnel --url https://192.168.0.140:8443 --no-tls-verify --no-autoupdate --protocol http2 >"$TUNNEL_LOG" 2>&1 &
+nohup cloudflared tunnel --url https://127.0.0.1:8443 --no-tls-verify --no-autoupdate --protocol http2 >"$TUNNEL_LOG" 2>&1 &
 echo $! > "$PID_FILE"
 
 for _ in $(seq 1 60); do
