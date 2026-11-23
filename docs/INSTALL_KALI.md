@@ -56,7 +56,22 @@ The simulator enrolls a fake Samsung device, sends one telemetry snapshot, and p
 created alerts. `--insecure` disables certificate verification; use it only with the local
 self-signed certificate.
 
-## 5. Production: cloud VPS, real domain and trusted HTTPS
+## 5. Remote monitoring (different Wi-Fi/mobile networks)
+
+### Quick option (works now, temporary URL): Cloudflare quick tunnel
+
+```bash
+cd ~/Desktop/DARKPRIME
+bash scripts/run_server.sh --tls --host 0.0.0.0
+bash scripts/install_cloudflared.sh   # first time
+bash scripts/start_remote_tunnel.sh
+bash scripts/remote_status.sh
+```
+
+Use the printed `PUBLIC_URL` as the Android app **Server URL**. The URL changes when tunnel
+restarts.
+
+### Stable production option: VPS + domain + trusted HTTPS
 
 Remote monitoring over mobile data requires a server reachable from the internet. Use a VPS with
 a public IP and a DNS name you control.

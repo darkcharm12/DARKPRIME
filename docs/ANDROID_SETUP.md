@@ -116,6 +116,7 @@ the event in the audit log. Re-enrollment requires a new one-time token and fres
 | Symptom | Fix |
 | --- | --- |
 | `Server URL must start with https://` | Enter the exact HTTPS URL; plain HTTP is blocked in the app. |
+| `Enrollment failed: cannot reach server...` | Check internet on both devices; for remote/cross-network use a public HTTPS URL (Cloudflare tunnel or VPS domain), not a local `192.168.x.x` address. |
 | Enrollment fails HTTP 401 | Token wrong, expired or already used. Ask for a new one. |
 | Enrollment fails HTTP 403 | Consent checkbox was not ticked. |
 | TLS error on Android | Use a publicly trusted certificate in production. For a lab, install the lab CA as a system certificate or use a debug build (debug builds trust user-installed CAs). |

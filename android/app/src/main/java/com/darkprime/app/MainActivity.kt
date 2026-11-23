@@ -313,10 +313,16 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, "Enrolled. Visible monitoring is now active.", Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
-                val message = if (e is ApiException) "Enrollment failed (HTTP ${e.status})." else "Enrollment failed: ${e.message}"
+                val detail = when (e) {
+                    is ApiException -> "HTTP ${e.status}"
+                    is java.net.UnknownHostException -> "server address not found. Use a public HTTPS URL/tunnel for remote access."
+                    is java.net.ConnectException, is java.net.SocketTimeoutException -> "cannot reach server. Check URL, internet, and that server/tunnel is running."
+                    is javax.net.ssl.SSLException -> "TLS/certificate error. Use a trusted HTTPS certificate or install the matching APK for your lab cert."
+                    else -> e.message ?: "unknown error"
+                }
                 runOnUiThread {
                     enrollButton.isEnabled = true
-                    statusText.text = message
+                    statusText.text = "Enrollment failed: $detail"
                 }
             }
         }.start()

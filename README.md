@@ -58,6 +58,13 @@ bash scripts/run_server.sh --tls --host 0.0.0.0
 Then follow `docs/ANDROID_SETUP.md` to install the app and enroll a device. For owner-approved
 screen sharing and cross-network setup, see `docs/SCREEN_MONITORING.md`.
 
+For remote use across different networks, run the quick tunnel and use its public HTTPS URL:
+
+```bash
+bash scripts/install_cloudflared.sh   # first time
+bash scripts/start_remote_tunnel.sh
+```
+
 For production / remote monitoring over mobile data, follow `docs/INSTALL_KALI.md` section 5
 (cloud VPS + real domain + Let's Encrypt + nginx + gunicorn).
 

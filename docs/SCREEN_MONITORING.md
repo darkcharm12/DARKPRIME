@@ -24,18 +24,22 @@ explicitly approves the session in the app **and** accepts Android's MediaProjec
 There is no second screen-session notification and no hidden capture path. Notification permission
 is not requested at app startup anymore; it is requested when a screen session is approved.
 
-## Cross-network operation
+## Cross-network / remote operation (required for different Wi-Fi/mobile data)
 
-The app only accepts HTTPS server URLs. A LAN address such as `https://192.168.0.140:8443` works
-only on the same Wi-Fi. For different networks (mobile data, another Wi-Fi), put the Flask server
-behind a publicly reachable HTTPS origin you control:
+The app only accepts HTTPS server URLs. A LAN address like `https://192.168.0.140:8443` works only
+on the same network.
 
-- preferred: VPS + domain + nginx TLS termination + gunicorn (see `docs/INSTALL_KALI.md` section 5);
-- lab alternative: an HTTPS reverse tunnel that exposes the local server on a public hostname.
+Use a public HTTPS origin:
 
-Enter that public HTTPS origin in the app's **Server URL**. No private IP, port forwarding, ADB, or
-plain HTTP is required. Keep `DARKPRIME_REQUIRE_HTTPS=1` in production and use a publicly trusted
-certificate.
+```bash
+cd ~/Desktop/DARKPRIME
+bash scripts/run_server.sh --tls --host 0.0.0.0
+bash scripts/install_cloudflared.sh   # first time
+bash scripts/start_remote_tunnel.sh
+```
+
+Put the printed `PUBLIC_URL` in the app **Server URL**. Verify with `bash scripts/remote_status.sh`.
+Quick tunnel URLs change on restart; for a stable URL, use VPS + domain + trusted cert.
 
 Optional server settings:
 

@@ -49,6 +49,8 @@ browsing history, files, photos and location. The app declares no permissions fo
   security config sets `cleartextTrafficPermitted="false"`.
 - Production should use a publicly trusted certificate (Let's Encrypt), TLS 1.2+, HSTS and nginx
   as the TLS terminator. With `DARKPRIME_REQUIRE_HTTPS=1` the Flask app rejects plain HTTP.
+- Remote/cross-network access must use a public HTTPS origin (Cloudflare tunnel or VPS domain);
+  private LAN IPs are not reachable from other networks.
 - Debug builds trust user-installed CAs for local lab certificates; release builds trust only
   system CAs. Self-signed certificates are for testing only.
 
