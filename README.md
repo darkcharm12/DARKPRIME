@@ -1,72 +1,79 @@
 # DARKPRIME
 
-Consent-based Android security monitoring and auditing platform operated from Kali Linux.
+DARKPRIME is a **consent-based Android auditing and owner-approved remote support platform**. The Android companion app runs visibly, enrolls only with a one-time operator token and explicit owner consent, and reports limited device/security telemetry to a self-hosted operator dashboard. Remote screen sharing is available only after an explicit owner approval and Android’s system MediaProjection consent, with visible indicators and immediate stop controls.
 
-DARKPRIME is a defensive audit tool. It only monitors Android devices whose owner installed the
-companion app and **explicitly enrolled** by entering a one-time token and ticking a consent
-checkbox. Monitoring is always visible (persistent notification), and the owner can stop it at
-any time from the app notification or the main screen.
+> **Legal / ethical use only.** Use DARKPRIME only on devices you own or are explicitly authorized to audit, with informed consent and in compliance with applicable law and policy. It is not spyware and must not be used for covert surveillance.
 
 ## What it does
 
-- Collects Android version / security patch level, device model, battery level, storage figures,
-  installed application inventory with *declared* permissions, enabled accessibility services,
-  device-admin status, screen-lock status, ADB/debugging flags and network type.
-- Stores encrypted-transport snapshots and alerts in SQLite for historical reports.
-- Generates deterministic security alerts (outdated Android, unknown accessibility services,
-  extra device admins, no screen lock, USB debugging, new apps, changed permissions, and more).
-- Provides an operator dashboard built with Flask and a REST API consumed by the Kotlin app.
-- Supports optional owner-approved screen sharing: explicit in-app approval, Android capture
-  consent, visible capture indicator, one foreground notification, and instant stop controls.
-- Works across Wi-Fi and mobile data because communication goes through an HTTPS server you
-  control (local HTTPS for labs, or a cloud VPS with a real domain and trusted certificate).
+- **Visible monitoring**: persistent foreground notification while monitoring/screen sharing is active.
+- **Explicit enrollment**: one-time enrollment token + in-app consent checkbox; owner can stop and unenroll from the app.
+- **Telemetry dashboard**: device model/version, battery, storage, network state, installed app inventory metadata, and audit/alert visibility.
+- **Owner-approved screen sharing**: operator requests session; owner approves in app; Android capture consent is required; owner can stop from app or notification; operator can request stop.
+- **Remote-capable design**: works across networks when the app points to a **public HTTPS URL** (Cloudflare tunnel/domain/VPS with trusted TLS).
 
-## What it deliberately does NOT do
+## What it does not do
 
-- No hidden installation, no stealth, no background concealment. Screen sharing never starts
-  without a separate owner approval and the Android system capture-consent dialog.
-- No camera, microphone, SMS, contacts, call logs, browsing history, file or credential access.
-- No bypass of Android permissions or user consent.
-- No ADB exposure to the public internet. ADB is never used by DARKPRIME at all.
+- No stealth/hidden operation, no silent install, no permission bypass.
+- No camera, microphone, SMS/call logs, contacts, or credential/keychain collection.
+- No remote shell, arbitrary command execution, or public ADB exposure.
 
 ## Repository layout
 
-```
-DARKPRIME/
-├── android/                 Kotlin companion app (Gradle)
-│   └── app/src/main/
-│       ├── AndroidManifest.xml
-│       ├── java/com/darkprime/app/
-│       └── res/             layouts, strings, icons, network security config
-├── data/                    SQLite database + secrets (git-ignored)
-├── deploy/                  systemd unit and service installer
-├── docs/                    installation, security, API and architecture guides
-├── nginx/                   HTTPS reverse-proxy configuration
-├── scripts/                 Kali setup, certificates, server and simulator scripts
-└── server/                  Flask application, REST API, dashboard, templates, tests
+```text
+android/                 Android companion app (Kotlin, WorkManager, Room, OkHttp)
+docs/                    Setup, security, API, architecture, screen monitoring
+nginx/                   Example HTTPS reverse-proxy config
+scripts/                 Kali setup, cert generation, server/tunnel helpers
+server/                  Flask API/dashboard, SQLite schema, tests
 ```
 
-## Quick start (lab, Kali Linux)
+## Quick start (Kali Linux, local lab)
 
 ```bash
 cd ~/Desktop/DARKPRIME
 bash scripts/setup_kali.sh
 bash scripts/run_server.sh --tls --host 0.0.0.0
-# Open https://<kali-ip>:8443/ and accept the self-signed certificate warning
 ```
 
-Then follow `docs/ANDROID_SETUP.md` to install the app and enroll a device. For owner-approved
-screen sharing and cross-network setup, see `docs/SCREEN_MONITORING.md`.
+Open `https://<kali-ip>:8443/`, accept the lab cert warning on the operator machine, log in, create a one-time enrollment token, and enroll from the Android app. For Android build/install details, see [`docs/ANDROID_SETUP.md`](docs/ANDROID_SETUP.md).
 
-For remote use across different networks, run the quick tunnel and use its public HTTPS URL:
+## Remote / any-network operation
+
+**Important:** a private LAN IP like `192.168.x.x` only works on the same Wi-Fi/LAN. For a phone on mobile data or another network, the app must use a **public HTTPS URL**.
+
+### Option A — Quick Cloudflare tunnel (fast, temporary URL)
 
 ```bash
-bash scripts/install_cloudflared.sh   # first time
+# Terminal 1 - server
+cd ~/Desktop/DARKPRIME
+bash scripts/run_server.sh --tls --host 0.0.0.0
+
+# Terminal 2 - public tunnel
+cd ~/Desktop/DARKPRIME
+bash scripts/install_cloudflared.sh
 bash scripts/start_remote_tunnel.sh
+# force a new URL if needed: bash scripts/start_remote_tunnel.sh --force
+
+# Terminal 3 - get URL
+cd ~/Desktop/DARKPRIME
+bash scripts/remote_status.sh
 ```
 
-For production / remote monitoring over mobile data, follow `docs/INSTALL_KALI.md` section 5
-(cloud VPS + real domain + Let's Encrypt + nginx + gunicorn).
+Paste the printed `PUBLIC_URL` into the Android app **Server URL**. Quick tunnel URLs change when the tunnel restarts; if it changes, update the URL in the app or re-enroll with a new one-time token.
+
+### Option B — Stable production remote (recommended)
+
+Use a VPS/domain with trusted HTTPS (Let's Encrypt + nginx + gunicorn), or a named Cloudflare Tunnel with a stable hostname. See [`docs/INSTALL_KALI.md`](docs/INSTALL_KALI.md) for deployment guidance.
+
+## Android app remote checklist
+
+1. Install latest APK from GitHub Actions artifact (**Build Android debug APK**).
+2. Ensure Linux server is running and tunnel/VPS is reachable.
+3. In app, Server URL must be `https://...` public/stable URL.
+4. Create a **new one-time enrollment token** in dashboard for enrollment/re-enrollment.
+5. Grant explicit consent in app. Approve screen sharing only when requested.
+6. If network changes or tunnel URL changes: keep server/tunnel running, use **Update server URL** in app or re-enroll, then restart screen sharing if needed.
 
 ## Verification
 
@@ -75,8 +82,15 @@ cd ~/Desktop/DARKPRIME
 .venv/bin/python -m pytest server/tests -q
 ```
 
-## License and responsibility
+Android CI builds run via GitHub Actions workflow. Local Gradle builds require a compatible JDK (CI uses Java 17).
 
-Use only with the informed, explicit consent of the device owner and in compliance with local
-law and your organization's policy. This project is a transparency and auditing tool, not a
-surveillance tool.
+## Security notes
+
+- Do not commit secrets or runtime artifacts: `data/darkprime.env`, `data/darkprime.sqlite3`, `server/certs/*.key`, `server/certs/*.crt`, `.venv/`, APKs/build outputs.
+- Rotate any credentials accidentally exposed.
+- Keep TLS enabled; use trusted certificates for production remote access.
+- Review [`docs/SECURITY.md`](docs/SECURITY.md) before deployment.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
