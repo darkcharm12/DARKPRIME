@@ -35,6 +35,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var unenrollButton: Button
     private lateinit var stopScreenButton: Button
     private lateinit var adminButton: Button
+    private lateinit var updateUrlButton: Button
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingSessionId: Int? = null
@@ -65,11 +66,13 @@ class MainActivity : AppCompatActivity() {
         unenrollButton = findViewById(R.id.unenrollButton)
         stopScreenButton = findViewById(R.id.stopScreenButton)
         adminButton = findViewById(R.id.adminButton)
+        updateUrlButton = findViewById(R.id.updateUrlButton)
 
         enrollButton.setOnClickListener { attemptEnroll() }
         unenrollButton.setOnClickListener { confirmUnenroll() }
         stopScreenButton.setOnClickListener { stopCurrentScreenSession() }
         adminButton.setOnClickListener { showAdminStatus() }
+        updateUrlButton.setOnClickListener { promptUpdateServerUrl() }
         refresh()
     }
 
@@ -90,6 +93,7 @@ class MainActivity : AppCompatActivity() {
         if (manager.isEnrolled) {
             enrollPanel.visibility = View.GONE
             unenrollButton.visibility = View.VISIBLE
+            updateUrlButton.visibility = View.VISIBLE
             statusText.text = "MONITORING ACTIVE"
             detailText.text = listOf(
                 "Device ID: ${manager.deviceId}",
@@ -104,9 +108,10 @@ class MainActivity : AppCompatActivity() {
             enrollPanel.visibility = View.VISIBLE
             unenrollButton.visibility = View.GONE
             stopScreenButton.visibility = View.GONE
+            updateUrlButton.visibility = View.GONE
             screenStatusText.text = "Screen sharing: off (not enrolled)"
             statusText.text = "NOT ENROLLED"
-            detailText.text = "Enrollment requires a one-time token from the operator dashboard and your explicit consent."
+            detailText.text = "Enrollment requires a one-time token from the operator dashboard and your explicit consent. For remote/cross-network use, enter the public HTTPS tunnel URL."
             stopService(Intent(this, MonitoringService::class.java))
         }
     }
@@ -158,10 +163,16 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (e: ApiException) {
                 runOnUiThread {
-                    screenStatusText.text = "Screen sharing: status unavailable (HTTP ${e.status})"
+                    screenStatusText.text = "Screen sharing: status unavailable (HTTP ${e.status}). If remote URL changed, use Update server URL."
                 }
-            } catch (_: Exception) {
-                runOnUiThread { screenStatusText.text = "Screen sharing: status unavailable" }
+            } catch (e: Exception) {
+                val detail = when (e) {
+                    is java.net.UnknownHostException -> "server not found"
+                    is java.net.ConnectException, is java.net.SocketTimeoutException -> "cannot reach server/tunnel"
+                    is javax.net.ssl.SSLException -> "TLS/certificate error"
+                    else -> "connection error"
+                }
+                runOnUiThread { screenStatusText.text = "Screen sharing: $detail. Check public URL/tunnel." }
             } finally {
                 screenCheckInFlight = false
             }
@@ -326,6 +337,47 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }.start()
+    }
+
+    private fun promptUpdateServerUrl() {
+        val manager = EnrollmentManager(this)
+        val input = EditText(this).apply {
+            setText(manager.serverUrl ?: "")
+            hint = "https://your-public-url.trycloudflare.com"
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Update server URL")
+            .setMessage("Use this when your public tunnel/domain changes. The device must already be enrolled; this keeps the same device token.")
+            .setView(input)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                val url = input.text.toString().trim().trimEnd('/')
+                if (!url.startsWith("https://", ignoreCase = true)) {
+                    Toast.makeText(this, "URL must start with https://", Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                Thread {
+                    try {
+                        val api = ApiClient(url, manager.deviceToken ?: "")
+                        api.heartbeat(Instant.now().toString())
+                        EnrollmentManager(applicationContext).save(url, manager.deviceToken ?: "", manager.deviceId, manager.consentAt ?: "")
+                        runOnUiThread {
+                            Toast.makeText(this, "Server URL updated.", Toast.LENGTH_LONG).show()
+                            refresh()
+                        }
+                    } catch (e: Exception) {
+                        val detail = when (e) {
+                            is ApiException -> "HTTP ${e.status}"
+                            is java.net.UnknownHostException -> "address not found"
+                            is java.net.ConnectException, is java.net.SocketTimeoutException -> "cannot reach server/tunnel"
+                            is javax.net.ssl.SSLException -> "TLS/certificate error"
+                            else -> e.message ?: "unknown error"
+                        }
+                        runOnUiThread { Toast.makeText(this, "Update failed: $detail", Toast.LENGTH_LONG).show() }
+                    }
+                }.start()
+            }
+            .show()
     }
 
     private fun confirmUnenroll() {

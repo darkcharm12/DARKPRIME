@@ -212,6 +212,17 @@
                 android:textColor="@color/text_primary" />
 
             <Button
+                android:id="@+id/updateUrlButton"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_button_secondary"
+                android:text="Update server URL"
+                android:textAllCaps="false"
+                android:textColor="@color/text_primary"
+                android:visibility="gone" />
+
+            <Button
                 android:id="@+id/unenrollButton"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
